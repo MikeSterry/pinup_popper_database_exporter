@@ -1,0 +1,49 @@
+services:
+  pup-exporter:
+    build: .
+    container_name: pup-exporter
+    restart: always
+    ports:
+      - "8000:8000"
+    environment:
+      # Flask/Gunicorn
+      APP_NAME: "pup-exporter"
+      LOG_LEVEL: "INFO"          # DEBUG, INFO, ERROR
+      REQUEST_TIMEOUT_SECONDS: "60"
+
+      # Data sources
+      LAST_UPDATED_URL: "https://virtualpinballspreadsheet.github.io/vps-db/lastUpdated.json"
+      PUPLOOKUP_URL: "https://virtualpinballspreadsheet.github.io/vps-db/db/puplookup.csv"
+      VPSDB_URL: "https://virtualpinballspreadsheet.github.io/vps-db/db/vpsdb.json"
+
+      # Mount points (override if you want different paths)
+      DATA_DIR: "/data"
+      OUTPUT_DIR: "/output"
+      BACKUPS_DIR: "/backups"
+
+      # Output file name
+      OUTPUT_FILENAME: "puplookup.csv"
+
+      # Scheduler: run every N seconds (default 3600 = 1 hour)
+      SYNC_INTERVAL_SECONDS: "3600"
+
+      # Backups
+      MAX_BACKUPS: "10"
+
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+    volumes:
+      - ./data:/data
+      - ./output:/output
+      - ./backups:/backups
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"

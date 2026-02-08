@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en" data-theme="{{ theme }}">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles/export.css') }}">
+    <title>{{ title }}</title>
+  </head>
+  <body>
+    <div class="card">
+      <h1>{{ title }}</h1>
+      <p>This will check <code>lastUpdated.json</code>, refresh local cache if needed, and (only if updated) write <code>/output/puplookup.csv</code>.</p>
+
+      <form method="post" action="/export?&theme={{ theme }}">
+        <button type="submit">Export</button>
+      </form>
+
+      {% if message %}
+        <p class="{{ 'ok' if success else 'bad' }}" style="margin-top: 1rem;">
+          {{ message }}
+        </p>
+      {% endif %}
+
+      <hr style="margin: 1.25rem 0;">
+      <div class="small">
+        <p><strong>API examples</strong></p>
+        <ul>
+          <li><code>GET /export?api=1</code> → JSON response</li>
+          <li><code>GET /export?api=1&download=1</code> → downloads CSV if created</li>
+          <li><code>GET /export?theme=[light|dark|transparent]</code> → sets the page theme</li>
+        </ul>
+      </div>
+    </div>
+  </body>
+</html>

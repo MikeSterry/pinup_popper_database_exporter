@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en" data-theme="{{ theme }}">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles/status.css') }}">
+    <title>{{ title }}</title>
+  </head>
+  <body>
+    <div class="card">
+      <h1>{{ status.app }} — Status</h1>
+
+      <div class="row"><div class="k">Local lastUpdated (epoch ms)</div><div><code>{{ status.local_last_updated_epoch_ms }}</code></div></div>
+      <div class="row"><div class="k">Local lastUpdated (UTC)</div><div><code>{{ status.local_last_updated_iso_utc or "n/a" }}</code></div></div>
+
+      <div class="row"><div class="k">Output file</div><div><code>{{ status.output_file }}</code></div></div>
+      <div class="row"><div class="k">Output mtime (UTC)</div><div><code>{{ status.output_file_mtime_iso_utc or "n/a" }}</code></div></div>
+
+      <div class="row"><div class="k">Sync interval (sec)</div><div><code>{{ status.sync_interval_seconds }}</code></div></div>
+      <div class="row"><div class="k">Max backups</div><div><code>{{ status.max_backups }}</code></div></div>
+      <div class="row"><div class="k">Log level</div><div><code>{{ status.log_level }}</code></div></div>
+
+      <hr style="margin: 1.25rem 0;">
+      <div class="small">
+        <p><strong>API examples</strong></p>
+        <ul>
+          <li><code>GET /export?api=1</code> → JSON response</li>
+          <li><code>GET /export?theme=[light|dark|transparent]</code> → sets the page theme</li>
+        </ul>
+      </div>
+    </div>
+  </body>
+</html>
