@@ -7,16 +7,18 @@ from zoneinfo import ZoneInfo
 from flask import Blueprint, current_app, jsonify, render_template, request
 
 from app.utils.utils import read_text
-from app.config.settings import Settings
 
 status_bp = Blueprint("status", __name__)
+settings = current_app.config["APP_SETTINGS"]
 
 def _epoch_ms_to_custom(epoch_ms: int) -> str:
     """Convert epoch ms to ISO-8601 UTC string."""
     if not epoch_ms:
         return ""
     custom_format = "%Y-%m-%d %H:%M"
-    return datetime.fromtimestamp(epoch_ms / 1000, tz=ZoneInfo(Settings.local_timezeone)).strftime(custom_format)
+    return (datetime
+            .fromtimestamp(epoch_ms / 1000, tz=ZoneInfo(settings.local_timezeone))
+            .strftime(custom_format))
 
 @status_bp.route("/status", methods=["GET"])
 def status():
