@@ -24,7 +24,7 @@ class SchedulerService:
 
         settings = self.app.config["APP_SETTINGS"]
 
-        scheduler = BackgroundScheduler(timezone="UTC")
+        scheduler = BackgroundScheduler(timezone=settings.local_timezeone)
         scheduler.add_job(
             func=lambda: self._run_job_safely(),
             trigger=IntervalTrigger(seconds=settings.sync_interval_seconds),

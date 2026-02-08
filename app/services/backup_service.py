@@ -21,7 +21,7 @@ class BackupService:
         if not output_file.exists():
             return
 
-        ts = datetime.datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
+        ts = datetime.datetime.now().strftime("%Y%m%dT%H%M%SZ")
         rotated = self.backups_dir / f"{output_file.stem}.{ts}{output_file.suffix}"
         log.info("Rotating existing output to backup: %s", rotated)
         shutil.move(str(output_file), str(rotated))
