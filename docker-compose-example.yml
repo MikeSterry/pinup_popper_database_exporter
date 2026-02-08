@@ -6,6 +6,9 @@ services:
     ports:
       - "8000:8000"
     environment:
+      # General settings
+      LOCAL_TIMEZONE: "America/Chicago"
+
       # Flask/Gunicorn
       APP_NAME: "pup-exporter"
       LOG_LEVEL: "INFO"          # DEBUG, INFO, ERROR

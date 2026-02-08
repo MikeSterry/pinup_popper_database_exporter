@@ -32,6 +32,8 @@ class Settings:
     sync_interval_seconds: int
     max_backups: int
 
+    local_timezeone: str
+
     @staticmethod
     def from_env() -> "Settings":
         """Build settings from environment variables."""
@@ -51,4 +53,6 @@ class Settings:
             output_filename=_env("OUTPUT_FILENAME", "puplookup.csv"),
             sync_interval_seconds=_env_int("SYNC_INTERVAL_SECONDS", 3600),
             max_backups=_env_int("MAX_BACKUPS", 10),
+
+            local_timezeone=_env("LOCAL_TIMEZONE", "America/Chicago"),
         )
