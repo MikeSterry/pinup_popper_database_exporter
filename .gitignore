@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.env
+
+# OS / IDE
+.DS_Store
+.vscode/
+.idea/
+
+# Mounted runtime data directories
+data/*
+output/*
+backups/*
+/data/*
+/output/*
+/backups/*
+
+# Docker
+docker-compose.yml

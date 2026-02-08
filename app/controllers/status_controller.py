@@ -8,11 +8,12 @@ from app.utils.utils import read_text
 
 status_bp = Blueprint("status", __name__)
 
-def _epoch_ms_to_iso(epoch_ms: int) -> str:
+def _epoch_ms_to_custom(epoch_ms: int) -> str:
     """Convert epoch ms to ISO-8601 UTC string."""
     if not epoch_ms:
         return ""
-    return datetime.fromtimestamp(epoch_ms / 1000, tz=timezone.utc).isoformat()
+    custom_format = "%Y-%m-%d %H:%M"
+    return datetime.fromtimestamp(epoch_ms / 1000).strftime(custom_format)
 
 @status_bp.route("/status", methods=["GET"])
 def status():
@@ -49,10 +50,10 @@ def status():
         "output_dir": str(output_dir),
         "backups_dir": str(Path(settings.backups_dir)),
         "local_last_updated_epoch_ms": local_epoch,
-        "local_last_updated_iso_utc": _epoch_ms_to_iso(local_epoch),
+        "local_last_updated_iso_utc": _epoch_ms_to_custom(local_epoch),
         "output_file": str(output_path),
         "output_file_mtime_epoch_ms": output_mtime,
-        "output_file_mtime_iso_utc": _epoch_ms_to_iso(output_mtime),
+        "output_file_mtime_iso_utc": _epoch_ms_to_custom(output_mtime),
     }
 
     if is_api:
