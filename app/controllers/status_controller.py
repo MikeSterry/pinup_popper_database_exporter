@@ -6,10 +6,10 @@ from zoneinfo import ZoneInfo
 
 from flask import Blueprint, current_app, jsonify, render_template, request
 
+from app import Settings
 from app.utils.utils import read_text
 
 status_bp = Blueprint("status", __name__)
-settings = current_app.config["APP_SETTINGS"]
 
 def _epoch_ms_to_custom(epoch_ms: int) -> str:
     """Convert epoch ms to ISO-8601 UTC string."""
@@ -17,8 +17,11 @@ def _epoch_ms_to_custom(epoch_ms: int) -> str:
         return ""
     custom_format = "%Y-%m-%d %H:%M"
     return (datetime
-            .fromtimestamp(epoch_ms / 1000, tz=ZoneInfo(settings.local_timezeone))
+            .fromtimestamp(epoch_ms / 1000, tz=ZoneInfo('America/Chicago'))
             .strftime(custom_format))
+
+def _build_status_payload(settings: Settings) -> dict:
+    return {"app": settings.app_name}
 
 @status_bp.route("/status", methods=["GET"])
 def status():
@@ -26,7 +29,6 @@ def status():
     - HTML (default) suitable for iframe, with ?theme=light|dark|transparent
     - JSON with ?api=1
     """
-    settings = current_app.config["APP_SETTINGS"]
     is_api = request.args.get("api") == "1"
     theme = (request.args.get("theme") or "light").lower()
     if theme not in {"light", "dark", "transparent"}:
