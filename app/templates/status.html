@@ -11,10 +11,10 @@
       <h1>{{ status.app }} — Status</h1>
 
       <div class="row"><div class="k">Local lastUpdated (epoch ms)</div><div><code>{{ status.local_last_updated_epoch_ms }}</code></div></div>
-      <div class="row"><div class="k">Local lastUpdated (UTC)</div><div><code>{{ status.local_last_updated_iso_utc or "n/a" }}</code></div></div>
+      <div class="row"><div class="k">Local lastUpdated</div><div><code>{{ status.local_last_updated_iso_utc or "n/a" }}</code></div></div>
 
       <div class="row"><div class="k">Output file</div><div><code>{{ status.output_file }}</code></div></div>
-      <div class="row"><div class="k">Output mtime (UTC)</div><div><code>{{ status.output_file_mtime_iso_utc or "n/a" }}</code></div></div>
+      <div class="row"><div class="k">Output mtime</div><div><code>{{ status.output_file_mtime_iso_utc or "n/a" }}</code></div></div>
 
       <div class="row"><div class="k">Sync interval (sec)</div><div><code>{{ status.sync_interval_seconds }}</code></div></div>
       <div class="row"><div class="k">Max backups</div><div><code>{{ status.max_backups }}</code></div></div>
