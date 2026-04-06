@@ -21,4 +21,4 @@ RUN mkdir -p /output /data /backups
 EXPOSE 8000
 
 # Gunicorn entrypoint
-CMD ["gunicorn", "-w", "2", "-b", "0.0.0.0:8000", "app.wsgi:app"]
+CMD ["gunicorn", "-w", "1", "-b", "0.0.0.0:8000", "app.wsgi:app"]
