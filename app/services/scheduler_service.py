@@ -5,6 +5,7 @@ from flask import Flask
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 
+from app.config import settings
 from app.utils.logger import get_logger
 from app.services.job_service import JobService
 from app.utils.constants import SCHEDULED_TRIGGER
@@ -41,6 +42,8 @@ class SchedulerService:
         """Run scheduled job with app context and exception safety."""
         try:
             with self.app.app_context():
+                log.info("Running scheduled sync/export job.")
                 JobService(self.app).run_sync_and_export(trigger=SCHEDULED_TRIGGER)
+                log.info("Finished scheduled sync/export job.")
         except Exception:
             log.exception("Scheduled sync/export job failed.")

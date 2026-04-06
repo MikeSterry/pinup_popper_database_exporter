@@ -37,11 +37,13 @@ class SyncService:
         try:
             return int(read_text(p).strip())
         except Exception:
+            log.error(f"Failed to read local epoch-ms from {p}")
             return 0
 
     def ensure_local_cache(self) -> None:
         """On initial run, pull remote files if they're not present locally."""
         ensure_dir(self.data_dir)
+        log.info(f"Syncing local cache: {self.data_dir}")
 
         # If either data file is missing, force a download.
         need = False
@@ -50,6 +52,7 @@ class SyncService:
                 need = True
                 break
         if not need:
+            log.info(f"No local cache found for {PUPLOOKUP_LOCAL_NAME}")
             return
 
         log.info("Local cache missing files; downloading initial data set.")
@@ -80,6 +83,7 @@ class SyncService:
     def _download_all(self, remote_epoch_ms: int) -> None:
         """Download puplookup.csv and vpsdb.json and update local lastUpdated.json."""
         ensure_dir(self.data_dir)
+        log.info(f"Syncing local cache: {self.data_dir}")
 
         pup_bytes = self.client.fetch_puplookup_csv_bytes()
         vpsdb_bytes = self.client.fetch_vpsdb_json_bytes()
