@@ -1,4 +1,6 @@
 from pathlib import Path
+import csv
+import json
 
 import pytest
 
@@ -7,34 +9,75 @@ from app.services.export_service import (
     BASE_COLUMNS,
     OUT_COLUMNS,
     ExportService,
+    TableCtx,
     _build_gamefile_name,
     _build_indexes,
     _build_master_map,
     _excluded_feature,
     _generate_rows,
+    _normalize_template_row,
     _norm_weblink,
     _parse_ipdb_num,
     _read_template_rows,
     _read_vpsdb,
-    _repair_template_row,
     _sanitize_filename_part,
     _sort_key_for_ctx,
     _weblink2,
 )
 
 
-def write_template_csv(path: Path, rows: list[list[str]]) -> None:
+def write_template_csv(path: Path, header: list[str], rows: list[list[str]]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8", newline="") as f:
-        f.write(",".join(BASE_COLUMNS) + "\n")
-        for row in rows:
-            escaped = []
-            for value in row:
-                value = "" if value is None else str(value)
-                if "," in value or '"' in value:
-                    value = '"' + value.replace('"', '""') + '"'
-                escaped.append(value)
-            f.write(",".join(escaped) + "\n")
+        writer = csv.writer(f)
+        writer.writerow(header)
+        writer.writerows(rows)
+
+
+def write_json(path: Path, obj) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(obj), encoding="utf-8")
+
+
+def make_ctx(
+    *,
+    game_id: str = "game-1",
+    game_name: str = "Attack From Mars (Bally 1995)",
+    manufacturer: str = "Bally",
+    year: str = "1995",
+    players: str = "4",
+    game_type: str = "SS",
+    theme: str = "Aliens, Sci-Fi",
+    designers: str = "Brian Eddy",
+    ipdb_url: str = "https://www.ipdb.org/machine.cgi?id=3781",
+    ipdb_num: str = "3781",
+    authors: list[str] | None = None,
+    version: str = "2.0",
+    tags_list: list[str] | None = None,
+    edition: str = "",
+    created_at: int = 123456789,
+    tf_index: int = 0,
+    tf_gamefile_name: str = "",
+) -> TableCtx:
+    return TableCtx(
+        game_id=game_id,
+        game_name=game_name,
+        manufacturer=manufacturer,
+        year=year,
+        players=players,
+        game_type=game_type,
+        theme=theme,
+        designers=designers,
+        ipdb_url=ipdb_url,
+        ipdb_num=ipdb_num,
+        authors=authors or ["Author A"],
+        version=version,
+        tags_list=tags_list or [],
+        edition=edition,
+        created_at=created_at,
+        tf_index=tf_index,
+        tf_gamefile_name=tf_gamefile_name,
+    )
 
 
 def test_norm_weblink_keeps_valid_ipdb_url():
@@ -76,43 +119,44 @@ def test_sanitize_filename_part_replaces_forward_slash():
     assert _sanitize_filename_part("50/50") == "50_50"
 
 
-def test_repair_template_row_returns_none_when_row_too_short():
-    short_row = ["a"] * 5
-    assert _repair_template_row(short_row) is None
+def test_normalize_template_row_returns_none_for_invalid_vps_id():
+    row = [""] * len(BASE_COLUMNS)
+    row[BASE_COLUMNS.index("VPS-ID")] = "bad"
+    assert _normalize_template_row(BASE_COLUMNS, row) is None
 
 
-def test_repair_template_row_repairs_split_manufacturer_column():
+def test_normalize_template_row_repairs_split_manufacturer_in_legacy_row():
     row = [
-        "file.vpx",                 # GameFileName
-        "Game Name",                # GameName
-        "Bally",                    # Manufact part 1
-        "Midway",                   # Manufact part 2
-        "1992",                     # GameYear
-        "4",                        # NumPlayers
-        "SS",                       # GameType
-        "Cat",                      # Category
-        "Theme",                    # GameTheme
-        "https://www.ipdb.org/machine.cgi?id=1234",  # WebLinkURL
-        "1234",                     # IPDBNum
-        "",                         # AltRunMode
-        "Designer",                 # DesignedBy
-        "Author",                   # Author
-        "1.0",                      # GAMEVER
-        "rom1",                     # Rom
-        "tag1",                     # Tags
-        "ABCDEFGH",                 # VPS-ID
+        "file.vpx",
+        "Game Name",
+        "Bally",
+        "Midway",
+        "1992",
+        "4",
+        "SS",
+        "Cat",
+        "Theme",
+        "https://www.ipdb.org/machine.cgi?id=1234",
+        "1234",
+        "",
+        "Designer",
+        "Author",
+        "1.0",
+        "rom1",
+        "tag1",
+        "ABCDEFGH",
     ]
 
-    repaired = _repair_template_row(row)
+    normalized = _normalize_template_row(BASE_COLUMNS, row)
 
-    assert repaired is not None
-    assert len(repaired) == len(BASE_COLUMNS)
-    assert repaired[2] == "Bally, Midway"
-    assert repaired[3] == "1992"
-    assert repaired[16] == "ABCDEFGH"
+    assert normalized is not None
+    assert normalized["Manufact"] == "Bally, Midway"
+    assert normalized["GameYear"] == "1992"
+    assert normalized["VPS-ID"] == "ABCDEFGH"
+    assert list(normalized.keys()) == OUT_COLUMNS
 
 
-def test_repair_template_row_folds_extra_columns_into_tags_when_last_extra_is_vps_id():
+def test_normalize_template_row_folds_extra_legacy_columns_into_tags():
     row = [
         "file.vpx",
         "Game Name",
@@ -136,35 +180,47 @@ def test_repair_template_row_folds_extra_columns_into_tags_when_last_extra_is_vp
         "ABCDEFGH",
     ]
 
-    repaired = _repair_template_row(row)
+    normalized = _normalize_template_row(BASE_COLUMNS, row)
 
-    assert repaired is not None
-    assert len(repaired) == len(BASE_COLUMNS)
-    assert repaired[15] == "tag1 extra tag 1 extra tag 2"
-    assert repaired[16] == "ABCDEFGH"
+    assert normalized is not None
+    assert normalized["Tags"] == "tag1 extra tag 1 extra tag 2"
+    assert normalized["VPS-ID"] == "ABCDEFGH"
 
 
-def test_repair_template_row_returns_none_when_final_vps_id_is_invalid():
+def test_normalize_template_row_keeps_modern_20_column_row_aligned():
     row = [
-        "file.vpx",
-        "Game Name",
-        "Williams",
-        "1993",
+        "Attack From Mars (Bally 1995) Author A 2.0",
+        "Attack From Mars (Bally 1995)",
+        "Bally",
+        "1995",
         "4",
         "SS",
-        "Cat",
-        "Theme",
         "",
+        "Aliens, Sci-Fi",
+        "https://www.ipdb.org/machine.cgi?id=3781",
+        "https://virtualpinballspreadsheet.github.io/tables?game=game-1&fileType=tables&fileId=VPS12345",
+        "3781",
         "",
+        "Brian Eddy",
+        "Author A",
+        "2.0",
         "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "bad",
+        "VR, MOD",
+        "VPS12345",
+        "game-1",
+        "game-1",
     ]
-    assert _repair_template_row(row) is None
+
+    normalized = _normalize_template_row(OUT_COLUMNS, row)
+
+    assert normalized is not None
+    assert normalized["WebLink2URL"].endswith("fileId=VPS12345")
+    assert normalized["IPDBNum"] == "3781"
+    assert normalized["GAMEVER"] == "2.0"
+    assert normalized["Tags"] == "VR, MOD"
+    assert normalized["VPS-ID"] == "VPS12345"
+    assert normalized["WebGameID"] == "game-1"
+    assert normalized["MasterID"] == "game-1"
 
 
 def test_read_template_rows_raises_when_file_missing(tmp_path):
@@ -180,7 +236,7 @@ def test_read_template_rows_raises_when_header_missing(tmp_path):
         _read_template_rows(csv_path)
 
 
-def test_read_template_rows_skips_unrepairable_rows_and_keeps_valid_rows(tmp_path):
+def test_read_template_rows_skips_invalid_rows_and_keeps_valid_legacy_rows(tmp_path):
     csv_path = tmp_path / "puplookup.csv"
 
     valid_row = [
@@ -204,11 +260,49 @@ def test_read_template_rows_skips_unrepairable_rows_and_keeps_valid_rows(tmp_pat
     ]
     invalid_row = ["too", "short"]
 
-    write_template_csv(csv_path, [valid_row, invalid_row])
+    write_template_csv(csv_path, BASE_COLUMNS, [valid_row, invalid_row])
 
     rows = _read_template_rows(csv_path)
 
-    assert rows == [valid_row]
+    assert len(rows) == 1
+    assert rows[0]["VPS-ID"] == "ABCDEFGH"
+    assert rows[0]["GameName"] == "Game Name"
+
+
+def test_read_template_rows_accepts_modern_20_column_template_rows(tmp_path):
+    csv_path = tmp_path / "puplookup.csv"
+
+    modern_row = [
+        "Attack From Mars (Bally 1995) Author A 2.0",
+        "Attack From Mars (Bally 1995)",
+        "Bally",
+        "1995",
+        "4",
+        "SS",
+        "",
+        "Aliens, Sci-Fi",
+        "https://www.ipdb.org/machine.cgi?id=3781",
+        "https://virtualpinballspreadsheet.github.io/tables?game=game-1&fileType=tables&fileId=VPS12345",
+        "3781",
+        "",
+        "Brian Eddy",
+        "Author A",
+        "2.0",
+        "",
+        "VR, MOD",
+        "VPS12345",
+        "game-1",
+        "game-1",
+    ]
+
+    write_template_csv(csv_path, OUT_COLUMNS, [modern_row])
+
+    rows = _read_template_rows(csv_path)
+
+    assert len(rows) == 1
+    assert rows[0]["WebLink2URL"].endswith("fileId=VPS12345")
+    assert rows[0]["IPDBNum"] == "3781"
+    assert rows[0]["MasterID"] == "game-1"
 
 
 def test_read_vpsdb_raises_when_file_missing(tmp_path):
@@ -273,12 +367,12 @@ def test_build_indexes_builds_context_from_vpsdb():
     assert ctx.tf_gamefile_name == "afm_night_mod.vpx"
 
 
-def test_build_master_map_prefers_table_file_game_id_then_game_id():
+def test_build_master_map_prefers_nested_game_id_when_present():
     vpsdb = [
         {
-            "id": "game-1",
+            "id": "game-parent",
             "tableFiles": [
-                {"id": "VPS12345", "game": {"id": "master-1"}},
+                {"id": "VPS12345", "game": {"id": "game-child"}},
                 {"id": "VPS67890"},
             ],
         }
@@ -286,344 +380,332 @@ def test_build_master_map_prefers_table_file_game_id_then_game_id():
 
     master_map = _build_master_map(vpsdb)
 
-    assert master_map["VPS12345"] == "master-1"
-    assert master_map["VPS67890"] == "game-1"
+    assert master_map["VPS12345"] == "game-child"
+    assert master_map["VPS67890"] == "game-parent"
 
 
-def test_build_gamefile_name_prefers_table_file_name():
-    vpsdb = [
-        {
-            "id": "game-1",
-            "name": "50/50",
-            "manufacturer": "Bally",
-            "year": 1990,
-            "tableFiles": [
-                {
-                    "id": "VPS12345",
-                    "authors": ["Author A"],
-                    "version": "1.0",
-                    "features": ["VR", "MOD"],
-                    "gameFileName": "custom_name.vpx",
-                }
-            ],
-        }
-    ]
+def test_build_gamefile_name_includes_author_and_version_when_raw_name_is_only_base_name():
+    ctx = make_ctx(
+        game_name="!WOW! (Mills Novelty Company 1932)",
+        authors=["Druadic"],
+        version="1.2b",
+        tags_list=[],
+        tf_gamefile_name="!WOW! (Mills Novelty Company 1932)",
+    )
 
-    ctx = _build_indexes(vpsdb)["VPS12345"]
-    assert _build_gamefile_name(ctx) == "custom_name.vpx"
+    assert _build_gamefile_name(ctx) == "!WOW! (Mills Novelty Company 1932) Druadic 1.2b"
 
 
-def test_build_gamefile_name_falls_back_to_generated_name():
-    vpsdb = [
-        {
-            "id": "game-1",
-            "name": "50/50",
-            "manufacturer": "Bally",
-            "year": 1990,
-            "tableFiles": [
-                {
-                    "id": "VPS12345",
-                    "authors": ["Author A"],
-                    "version": "1.0",
-                    "features": ["VR", "MOD"],
-                    "gameFileName": "",
-                }
-            ],
-        }
-    ]
+def test_build_gamefile_name_appends_mod_tag():
+    ctx = make_ctx(
+        game_name="Some Table (Bally 1995)",
+        authors=["Author A"],
+        version="2.0",
+        tags_list=["MOD"],
+        tf_gamefile_name="Some Table (Bally 1995)",
+    )
 
-    ctx = _build_indexes(vpsdb)["VPS12345"]
-    result = _build_gamefile_name(ctx)
-
-    assert result == "50_50 (Bally 1990) Author A 1.0 MOD VR"
+    assert _build_gamefile_name(ctx) == "Some Table (Bally 1995) Author A 2.0 MOD"
 
 
-def test_sort_key_for_ctx_prefers_name_then_created_at_desc_then_empty_edition_then_index():
-    vpsdb = [
-        {
-            "id": "game-1",
-            "name": "Same Name",
-            "manufacturer": "Bally",
-            "year": 1990,
-            "tableFiles": [
-                {"id": "VPS11111", "createdAt": 200, "edition": "", "gameFileName": "a.vpx"},
-                {"id": "VPS22222", "createdAt": 100, "edition": "Night", "gameFileName": "b.vpx"},
-            ],
-        }
-    ]
+def test_build_gamefile_name_appends_vr_tag():
+    ctx = make_ctx(
+        game_name="Some Table (Bally 1995)",
+        authors=["Author A"],
+        version="2.0",
+        tags_list=["VR"],
+        tf_gamefile_name="Some Table (Bally 1995)",
+    )
 
-    ctx_by_vpsid = _build_indexes(vpsdb)
-
-    key1 = _sort_key_for_ctx(ctx_by_vpsid["VPS11111"])
-    key2 = _sort_key_for_ctx(ctx_by_vpsid["VPS22222"])
-
-    assert key1 < key2
+    assert _build_gamefile_name(ctx) == "Some Table (Bally 1995) Author A 2.0 VR"
 
 
-def test_generate_rows_enriches_existing_vps_id_and_preserves_missing_vps_id():
+def test_build_gamefile_name_appends_mod_and_vr_tags():
+    ctx = make_ctx(
+        game_name="Some Table (Bally 1995)",
+        authors=["Author A"],
+        version="2.0",
+        tags_list=["VR", "MOD"],
+        tf_gamefile_name="Some Table (Bally 1995)",
+    )
+
+    assert _build_gamefile_name(ctx) == "Some Table (Bally 1995) Author A 2.0 MOD VR"
+
+
+def test_build_gamefile_name_uses_richer_raw_name_when_it_contains_version_data():
+    ctx = make_ctx(
+        game_name="Some Table (Bally 1995)",
+        authors=["Author A"],
+        version="2.0",
+        tags_list=["VR"],
+        tf_gamefile_name="Some Table (Bally 1995) Author A 2.0 VR",
+    )
+
+    assert _build_gamefile_name(ctx) == "Some Table (Bally 1995) Author A 2.0 VR"
+
+
+def test_sort_key_for_ctx_orders_by_prefix_created_desc_edition_flag_then_index():
+    ctx1 = make_ctx(game_name="Addams Family (Bally 1992)", created_at=200, edition="", tf_index=1)
+    ctx2 = make_ctx(game_name="Addams Family (Bally 1992)", created_at=100, edition="Night Mod", tf_index=0)
+
+    assert _sort_key_for_ctx(ctx1) < _sort_key_for_ctx(ctx2)
+
+
+def test_generate_rows_enriches_gamefile_name_and_modern_columns():
+    ctx = make_ctx(
+        game_id="game-1",
+        game_name="!WOW! (Mills Novelty Company 1932)",
+        manufacturer="Mills Novelty Company",
+        year="1932",
+        authors=["Druadic"],
+        version="1.2b",
+        tags_list=["MOD", "VR"],
+        ipdb_url="https://www.ipdb.org/machine.cgi?id=999",
+        ipdb_num="999",
+    )
+
     template_rows = [
-        [
-            "template_file_1.vpx",
-            "Template Name 1",
-            "Template Manuf",
-            "1980",
-            "2",
-            "EM",
-            "Cat",
-            "Theme",
-            "https://example.com/not-ipdb",
-            "9999",
-            "",
-            "Template Designer",
-            "Template Author",
-            "0.1",
-            "romx",
-            "oldtag",
-            "VPS12345",
-        ],
-        [
-            "template_file_2.vpx",
-            "Template Name 2",
-            "Template Manuf",
-            "1981",
-            "4",
-            "SS",
-            "Cat2",
-            "Theme2",
-            "",
-            "",
-            "",
-            "",
-            "",
-            "",
-            "",
-            "oldtag2",
-            "MISSING999",
-        ],
-    ]
-
-    vpsdb = [
         {
-            "id": "game-1",
-            "name": "Attack From Mars",
-            "manufacturer": "Bally",
-            "year": 1995,
-            "players": 4,
-            "type": "SS",
-            "theme": ["Aliens"],
-            "designers": ["Brian Eddy"],
-            "ipdbUrl": "https://www.ipdb.org/machine.cgi?id=3781",
-            "tableFiles": [
-                {
-                    "id": "VPS12345",
-                    "game": {"id": "master-1"},
-                    "authors": ["Author A"],
-                    "version": "2.0",
-                    "features": ["VR"],
-                    "edition": "",
-                    "createdAt": 50,
-                    "gameFileName": "afm.vpx",
-                }
-            ],
+            "GameFileName": "!WOW! (Mills Novelty Company 1932)",
+            "GameName": "!WOW! (Mills Novelty Company 1932)",
+            "Manufact": "",
+            "GameYear": "",
+            "NumPlayers": "",
+            "GameType": "",
+            "Category": "",
+            "GameTheme": "",
+            "WebLinkURL": "",
+            "WebLink2URL": "",
+            "IPDBNum": "",
+            "AltRunMode": "",
+            "DesignedBy": "",
+            "Author": "",
+            "GAMEVER": "",
+            "Rom": "",
+            "Tags": "",
+            "VPS-ID": "VPS12345",
+            "WebGameID": "",
+            "MasterID": "",
         }
     ]
 
-    ctx_by_vpsid = _build_indexes(vpsdb)
-    master_by_vpsid = _build_master_map(vpsdb)
-
-    rows = _generate_rows(template_rows, ctx_by_vpsid, master_by_vpsid)
+    rows = _generate_rows(
+        template_rows=template_rows,
+        ctx_by_vpsid={"VPS12345": ctx},
+        master_by_vpsid={"VPS12345": "game-1"},
+    )
 
     assert rows[0] == OUT_COLUMNS
-    assert len(rows) == 3
+    data_row = rows[1]
+    row_map = dict(zip(OUT_COLUMNS, data_row))
 
-    enriched = next(row for row in rows[1:] if row[OUT_COLUMNS.index("VPS-ID")] == "VPS12345")
-    missing = next(row for row in rows[1:] if row[OUT_COLUMNS.index("VPS-ID")] == "MISSING999")
-
-    assert enriched[OUT_COLUMNS.index("GameName")] == "Attack From Mars (Bally 1995)"
-    assert enriched[OUT_COLUMNS.index("Manufact")] == "Bally"
-    assert enriched[OUT_COLUMNS.index("GameYear")] == "1995"
-    assert enriched[OUT_COLUMNS.index("NumPlayers")] == "4"
-    assert enriched[OUT_COLUMNS.index("GameType")] == "SS"
-    assert enriched[OUT_COLUMNS.index("GameTheme")] == "Aliens"
-    assert enriched[OUT_COLUMNS.index("WebLinkURL")] == "https://www.ipdb.org/machine.cgi?id=3781"
-    assert enriched[OUT_COLUMNS.index("WebLink2URL")] == (
-        "https://virtualpinballspreadsheet.github.io/tables?game=master-1&fileType=tables&fileId=VPS12345"
+    assert row_map["GameFileName"] == "!WOW! (Mills Novelty Company 1932) Druadic 1.2b MOD VR"
+    assert row_map["GameName"] == "!WOW! (Mills Novelty Company 1932)"
+    assert row_map["Manufact"] == "Mills Novelty Company"
+    assert row_map["GameYear"] == "1932"
+    assert row_map["Author"] == "Druadic"
+    assert row_map["GAMEVER"] == "1.2b"
+    assert row_map["Tags"] == "MOD, VR"
+    assert row_map["WebLink2URL"] == (
+        "https://virtualpinballspreadsheet.github.io/tables?game=game-1&fileType=tables&fileId=VPS12345"
     )
-    assert enriched[OUT_COLUMNS.index("IPDBNum")] == "3781"
-    assert enriched[OUT_COLUMNS.index("DesignedBy")] == "Brian Eddy"
-    assert enriched[OUT_COLUMNS.index("Author")] == "Author A"
-    assert enriched[OUT_COLUMNS.index("GAMEVER")] == "2.0"
-    assert enriched[OUT_COLUMNS.index("Tags")] == "VR"
-    assert enriched[OUT_COLUMNS.index("GameFileName")] == "afm.vpx"
-    assert enriched[OUT_COLUMNS.index("MasterID")] == "master-1"
-
-    assert missing[OUT_COLUMNS.index("GameName")] == "Template Name 2"
-    assert missing[OUT_COLUMNS.index("WebLink2URL")] == ""
-    assert missing[OUT_COLUMNS.index("MasterID")] == ""
+    assert row_map["IPDBNum"] == "999"
+    assert row_map["VPS-ID"] == "VPS12345"
+    assert row_map["MasterID"] == "game-1"
 
 
-def test_generate_rows_sorts_using_context_key():
+def test_generate_rows_keeps_unmatched_template_row_aligned():
     template_rows = [
-        [
-            "x1.vpx", "Zeta", "M1", "1991", "4", "SS", "", "", "", "", "", "", "", "", "", "", "VPS11111"
-        ],
-        [
-            "x2.vpx", "Alpha", "M2", "1992", "4", "SS", "", "", "", "", "", "", "", "", "", "", "VPS22222"
-        ],
-        [
-            "x3.vpx", "Alpha", "M2", "1992", "4", "SS", "", "", "", "", "", "", "", "", "", "", "VPS33333"
-        ],
+        {
+            "GameFileName": "Legacy File",
+            "GameName": "Legacy Game",
+            "Manufact": "Bally",
+            "GameYear": "1992",
+            "NumPlayers": "4",
+            "GameType": "SS",
+            "Category": "",
+            "GameTheme": "Theme",
+            "WebLinkURL": "https://www.ipdb.org/machine.cgi?id=1234",
+            "WebLink2URL": "",
+            "IPDBNum": "1234",
+            "AltRunMode": "",
+            "DesignedBy": "Designer",
+            "Author": "Author",
+            "GAMEVER": "1.0",
+            "Rom": "rom1",
+            "Tags": "tag1",
+            "VPS-ID": "ABCDEFGH",
+            "WebGameID": "",
+            "MasterID": "",
+        }
     ]
+
+    rows = _generate_rows(
+        template_rows=template_rows,
+        ctx_by_vpsid={},
+        master_by_vpsid={},
+    )
+
+    assert rows[0] == OUT_COLUMNS
+    data_row = rows[1]
+    row_map = dict(zip(OUT_COLUMNS, data_row))
+
+    assert row_map["GameFileName"] == "Legacy File"
+    assert row_map["GameName"] == "Legacy Game"
+    assert row_map["WebLink2URL"] == ""
+    assert row_map["IPDBNum"] == "1234"
+    assert row_map["VPS-ID"] == "ABCDEFGH"
+    assert row_map["MasterID"] == ""
+
+
+def test_export_service_generate_output_csv_writes_expected_file(tmp_path):
+    data_dir = tmp_path / "data"
+    output_dir = tmp_path / "output"
+
+    template_row = [
+        "!WOW! (Mills Novelty Company 1932)",
+        "!WOW! (Mills Novelty Company 1932)",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "VPS12345",
+    ]
+    write_template_csv(data_dir / "puplookup.csv", BASE_COLUMNS, [template_row])
 
     vpsdb = [
         {
-            "id": "game-z",
-            "name": "Zeta",
-            "manufacturer": "Bally",
-            "year": 1991,
-            "tableFiles": [
-                {"id": "VPS11111", "createdAt": 100, "edition": "", "gameFileName": "z.vpx"}
-            ],
-        },
-        {
-            "id": "game-a",
-            "name": "Alpha",
-            "manufacturer": "Williams",
-            "year": 1992,
-            "tableFiles": [
-                {"id": "VPS22222", "createdAt": 200, "edition": "", "gameFileName": "a1.vpx"},
-                {"id": "VPS33333", "createdAt": 100, "edition": "Night", "gameFileName": "a2.vpx"},
-            ],
-        },
-    ]
-
-    rows = _generate_rows(template_rows, _build_indexes(vpsdb), _build_master_map(vpsdb))
-    data = rows[1:]
-
-    assert [row[OUT_COLUMNS.index("VPS-ID")] for row in data] == ["VPS22222", "VPS33333", "VPS11111"]
-
-
-def test_generate_output_csv_creates_expected_file_with_bom_and_enriched_content(tmp_path):
-    data_dir = tmp_path / "data"
-    output_dir = tmp_path / "output"
-    data_dir.mkdir()
-    output_dir.mkdir()
-
-    write_template_csv(
-        data_dir / "puplookup.csv",
-        [
-            [
-                "template_file.vpx",
-                "Template Name",
-                "Template Manuf",
-                "1980",
-                "2",
-                "EM",
-                "Cat",
-                "Theme",
-                "",
-                "",
-                "",
-                "",
-                "",
-                "",
-                "",
-                "",
-                "VPS12345",
-            ]
-        ],
-    )
-
-    (data_dir / "vpsdb.json").write_text(
-        """
-        [
-          {
             "id": "game-1",
-            "name": "Attack From Mars",
-            "manufacturer": "Bally",
-            "year": 1995,
-            "players": 4,
-            "type": "SS",
-            "theme": ["Aliens"],
-            "designers": ["Brian Eddy"],
-            "ipdbUrl": "https://www.ipdb.org/machine.cgi?id=3781",
+            "name": "!WOW!",
+            "manufacturer": "Mills Novelty Company",
+            "year": 1932,
+            "players": 1,
+            "type": "EM",
+            "theme": ["Arcade"],
+            "designers": ["Designer A"],
+            "ipdbUrl": "https://www.ipdb.org/machine.cgi?id=999",
             "tableFiles": [
-              {
-                "id": "VPS12345",
-                "game": {"id": "master-1"},
-                "authors": ["Author A"],
-                "version": "2.0",
-                "features": ["VR"],
-                "edition": "",
-                "createdAt": 50,
-                "gameFileName": "afm.vpx"
-              }
-            ]
-          }
-        ]
-        """.strip(),
-        encoding="utf-8",
-    )
+                {
+                    "id": "VPS12345",
+                    "game": {"id": "game-1"},
+                    "authors": ["Druadic"],
+                    "version": "1.2b",
+                    "features": ["MOD", "VR"],
+                    "edition": "",
+                    "createdAt": 123456789,
+                    "gameFileName": "!WOW! (Mills Novelty Company 1932)",
+                }
+            ],
+        }
+    ]
+    write_json(data_dir / "vpsdb.json", vpsdb)
 
     service = ExportService(
         data_dir=data_dir,
         output_dir=output_dir,
-        output_filename="puplookup_out.csv",
+        output_filename="puplookup.csv",
     )
 
     out_path = service.generate_output_csv()
 
-    assert out_path == output_dir / "puplookup_out.csv"
     assert out_path.exists()
 
-    raw = out_path.read_bytes()
-    assert raw.startswith(b"\xef\xbb\xbf")
+    with out_path.open("r", encoding="utf-8-sig", newline="") as f:
+        rows = list(csv.reader(f))
 
-    text = out_path.read_text(encoding="utf-8-sig")
-    lines = text.splitlines()
-
-    assert lines[0].split(",") == OUT_COLUMNS
-    assert "Attack From Mars (Bally 1995)" in text
-    assert "https://www.ipdb.org/machine.cgi?id=3781" in text
-    assert "https://virtualpinballspreadsheet.github.io/tables?game=master-1&fileType=tables&fileId=VPS12345" in text
-
-
-def test_generate_output_csv_raises_when_template_missing(tmp_path):
-    data_dir = tmp_path / "data"
-    output_dir = tmp_path / "output"
-    data_dir.mkdir()
-    output_dir.mkdir()
-
-    (data_dir / "vpsdb.json").write_text("[]", encoding="utf-8")
-
-    service = ExportService(
-        data_dir=data_dir,
-        output_dir=output_dir,
-        output_filename="puplookup_out.csv",
+    assert rows[0] == OUT_COLUMNS
+    row_map = dict(zip(OUT_COLUMNS, rows[1]))
+    assert row_map["GameFileName"] == "!WOW! (Mills Novelty Company 1932) Druadic 1.2b MOD VR"
+    assert row_map["Author"] == "Druadic"
+    assert row_map["GAMEVER"] == "1.2b"
+    assert row_map["Tags"] == "MOD, VR"
+    assert row_map["WebLink2URL"] == (
+        "https://virtualpinballspreadsheet.github.io/tables?game=game-1&fileType=tables&fileId=VPS12345"
     )
 
-    with pytest.raises(DataValidationError, match="Missing template CSV"):
-        service.generate_output_csv()
-
-
-def test_generate_output_csv_raises_when_vpsdb_missing(tmp_path):
-    data_dir = tmp_path / "data"
-    output_dir = tmp_path / "output"
-    data_dir.mkdir()
-    output_dir.mkdir()
-
-    write_template_csv(
-        data_dir / "puplookup.csv",
-        [[
-            "file.vpx", "Game", "Mfg", "1990", "4", "SS", "", "", "", "", "", "", "", "", "", "", "ABCDEFGH"
-        ]],
+def test_build_gamefile_name_uses_existing_template_base_name():
+    ctx = make_ctx(
+        game_name="The Addams Family (Bally 1992)",
+        authors=["Cheese3075"],
+        version="2.4.41",
+        tags_list=["MOD"],
+        tf_gamefile_name="The Addams Family (Bally 1992)",
     )
 
-    service = ExportService(
-        data_dir=data_dir,
-        output_dir=output_dir,
-        output_filename="puplookup_out.csv",
+    result = _build_gamefile_name(
+        ctx,
+        existing_gamefile_name="Addams Family, The (Bally 1992)",
     )
 
-    with pytest.raises(DataValidationError, match="Missing vpsdb.json"):
-        service.generate_output_csv()
+    assert result == "Addams Family, The (Bally 1992) Cheese3075 2.4.41 MOD"
+
+def test_build_gamefile_name_preserves_special_template_name():
+    ctx = make_ctx(
+        game_name="CastleStorm (Zen Studios 2015)",
+        authors=["Zen Studios"],
+        version="",
+        tags_list=[],
+        tf_gamefile_name="CastleStorm (Zen Studios 2015)",
+    )
+
+    result = _build_gamefile_name(
+        ctx,
+        existing_gamefile_name="Table 40",
+    )
+
+    assert result == "Table 40"
+
+def test_build_gamefile_name_does_not_append_zen_studios_author():
+    ctx = make_ctx(
+        game_name="CastleStorm (Zen Studios 2015)",
+        authors=["Zen Studios"],
+        version="",
+        tags_list=[],
+    )
+
+    result = _build_gamefile_name(
+        ctx,
+        existing_gamefile_name="Table 40",
+    )
+
+    assert result == "Table 40"
+
+def test_build_gamefile_name_enriches_template_base_with_author_version_mod_vr():
+    ctx = make_ctx(
+        game_name="Some Table (Bally 1995)",
+        authors=["Author A"],
+        version="2.0",
+        tags_list=["MOD", "VR"],
+    )
+
+    result = _build_gamefile_name(
+        ctx,
+        existing_gamefile_name="Some Table, The (Bally 1995)",
+    )
+
+    assert result == "Some Table, The (Bally 1995) Author A 2.0 MOD VR"
+
+def test_build_gamefile_name_preserves_version_whitespace():
+    ctx = make_ctx(
+        game_name="Whoa Nellie! Big Juicy Melons (WhizBang Pinball 2011)",
+        authors=["Popotte"],
+        version=" FizX3.3 V1.00",
+        tags_list=[],
+    )
+
+    result = _build_gamefile_name(
+        ctx,
+        existing_gamefile_name="Whoa Nellie! Big Juicy Melons (WhizBang Pinball 2011)",
+    )
+
+    assert result == "Whoa Nellie! Big Juicy Melons (WhizBang Pinball 2011) Popotte  FizX3.3 V1.00"
