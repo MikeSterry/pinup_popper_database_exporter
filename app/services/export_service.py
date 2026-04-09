@@ -361,40 +361,63 @@ def _raw_gamefile_name_is_richer(raw_name: str, base: str, author_part: str, ver
     return has_author or has_version or has_mod or has_vr
 
 
-def _build_gamefile_name(ctx: TableCtx) -> str:
+def _build_gamefile_name(ctx: TableCtx, existing_gamefile_name: str = "") -> str:
     """
-    Build GameFileName.
+    Build GameFileName to match the expected export.
 
-    Prefer a composed name unless tableFiles[].gameFileName is clearly richer.
-    This avoids returning short/base names that omit author/version/tag suffixes.
+    Rules inferred from expected.csv:
+    - Use the existing/template GameFileName as the base whenever present
+    - Otherwise fall back to tableFiles[].gameFileName
+    - Otherwise fall back to ctx.game_name
+    - Append first author unless already present or the first author is Zen Studios
+    - Append version exactly as stored (do not strip it)
+    - Append MOD / VR when present in tags and not already in the name
     """
-    base = _sanitize_filename_part(ctx.game_name)
+    base = (existing_gamefile_name or "").strip()
 
-    author_part = ctx.authors[0].strip() if ctx.authors else ""
-    version_part = (ctx.version or "").strip()
-    tags_upper = {tag.strip().upper() for tag in ctx.tags_list if isinstance(tag, str)}
+    if not base:
+        base = (ctx.tf_gamefile_name or "").strip()
 
-    parts = [base]
+    if not base:
+        base = _sanitize_filename_part(ctx.game_name)
 
-    if author_part:
-        parts.append(author_part)
+    first_author = ctx.authors[0].strip() if ctx.authors else ""
+    version = ctx.version or ""
+    tags_upper = {
+        tag.strip().upper()
+        for tag in ctx.tags_list
+        if isinstance(tag, str) and tag.strip()
+    }
 
-    if version_part:
-        parts.append(version_part)
+    result = base
+    result_upper = result.upper()
 
-    if "MOD" in tags_upper:
-        parts.append("MOD")
+    # Expected export does not append "Zen Studios" to GameFileName
+    should_append_author = (
+        bool(first_author)
+        and first_author.upper() != "ZEN STUDIOS"
+        and first_author.lower() not in result.lower()
+    )
 
-    if "VR" in tags_upper:
-        parts.append("VR")
+    if should_append_author:
+        result = f"{result} {first_author}"
+        result_upper = result.upper()
 
-    composed = " ".join(part for part in parts if part).strip()
-    raw_name = (ctx.tf_gamefile_name or "").strip()
+    # Important: do NOT strip version.
+    # expected.csv contains cases where version begins with a leading space,
+    # and the output preserves that spacing.
+    if version and version.lower() not in result.lower():
+        result = f"{result} {version}"
+        result_upper = result.upper()
 
-    if _raw_gamefile_name_is_richer(raw_name, base, author_part, version_part, tags_upper):
-        return raw_name
+    if "MOD" in tags_upper and "MOD" not in result_upper.split():
+        result = f"{result} MOD"
+        result_upper = result.upper()
 
-    return composed
+    if "VR" in tags_upper and "VR" not in result_upper.split():
+        result = f"{result} VR"
+
+    return result
 
 
 def _sort_key_for_ctx(ctx: TableCtx) -> Tuple:
@@ -449,7 +472,10 @@ def _generate_rows(
         row["Author"] = ", ".join(ctx.authors)
         row["GAMEVER"] = ctx.version
         row["Tags"] = ", ".join(ctx.tags_list)
-        row["GameFileName"] = _build_gamefile_name(ctx)
+        row["GameFileName"] = _build_gamefile_name(
+            ctx,
+            existing_gamefile_name=row.get("GameFileName", ""),
+        )
 
         out_rows.append([row.get(column, "") for column in OUT_COLUMNS])
 

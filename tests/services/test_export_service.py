@@ -632,3 +632,80 @@ def test_export_service_generate_output_csv_writes_expected_file(tmp_path):
     assert row_map["WebLink2URL"] == (
         "https://virtualpinballspreadsheet.github.io/tables?game=game-1&fileType=tables&fileId=VPS12345"
     )
+
+def test_build_gamefile_name_uses_existing_template_base_name():
+    ctx = make_ctx(
+        game_name="The Addams Family (Bally 1992)",
+        authors=["Cheese3075"],
+        version="2.4.41",
+        tags_list=["MOD"],
+        tf_gamefile_name="The Addams Family (Bally 1992)",
+    )
+
+    result = _build_gamefile_name(
+        ctx,
+        existing_gamefile_name="Addams Family, The (Bally 1992)",
+    )
+
+    assert result == "Addams Family, The (Bally 1992) Cheese3075 2.4.41 MOD"
+
+def test_build_gamefile_name_preserves_special_template_name():
+    ctx = make_ctx(
+        game_name="CastleStorm (Zen Studios 2015)",
+        authors=["Zen Studios"],
+        version="",
+        tags_list=[],
+        tf_gamefile_name="CastleStorm (Zen Studios 2015)",
+    )
+
+    result = _build_gamefile_name(
+        ctx,
+        existing_gamefile_name="Table 40",
+    )
+
+    assert result == "Table 40"
+
+def test_build_gamefile_name_does_not_append_zen_studios_author():
+    ctx = make_ctx(
+        game_name="CastleStorm (Zen Studios 2015)",
+        authors=["Zen Studios"],
+        version="",
+        tags_list=[],
+    )
+
+    result = _build_gamefile_name(
+        ctx,
+        existing_gamefile_name="Table 40",
+    )
+
+    assert result == "Table 40"
+
+def test_build_gamefile_name_enriches_template_base_with_author_version_mod_vr():
+    ctx = make_ctx(
+        game_name="Some Table (Bally 1995)",
+        authors=["Author A"],
+        version="2.0",
+        tags_list=["MOD", "VR"],
+    )
+
+    result = _build_gamefile_name(
+        ctx,
+        existing_gamefile_name="Some Table, The (Bally 1995)",
+    )
+
+    assert result == "Some Table, The (Bally 1995) Author A 2.0 MOD VR"
+
+def test_build_gamefile_name_preserves_version_whitespace():
+    ctx = make_ctx(
+        game_name="Whoa Nellie! Big Juicy Melons (WhizBang Pinball 2011)",
+        authors=["Popotte"],
+        version=" FizX3.3 V1.00",
+        tags_list=[],
+    )
+
+    result = _build_gamefile_name(
+        ctx,
+        existing_gamefile_name="Whoa Nellie! Big Juicy Melons (WhizBang Pinball 2011)",
+    )
+
+    assert result == "Whoa Nellie! Big Juicy Melons (WhizBang Pinball 2011) Popotte  FizX3.3 V1.00"
